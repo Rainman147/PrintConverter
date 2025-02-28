@@ -1,0 +1,731 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aerospace PDF Manual Converter</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/fabric@5.2.1/dist/fabric.min.js"></script>
+    <style>
+        .canvas-container {
+            margin: 0 auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .drawing-exclusion {
+            cursor: crosshair !important;
+        }
+        .selecting-dimension {
+            cursor: cell !important;
+        }
+        .loading-overlay {
+            background-color: rgba(255, 255, 255, 0.7);
+            z-index: 50;
+        }
+        .pdf-preview {
+            max-height: calc(100vh - 300px);
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Aerospace PDF Manual Converter</h1>
+            <p class="text-gray-600">Upload a PDF, manually select dimensions to convert from metric to imperial</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Panel: Upload and Controls -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-700">PDF Upload & Controls</h2>
+                    
+                    <div id="upload-section" class="mb-6">
+                        <div class="flex items-center justify-center w-full">
+                            <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                                <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                                    <svg class="w-8 h-8 mb-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                    </svg>
+                                    <p class="mb-1 text-sm text-gray-500">Click to upload or drag and drop</p>
+                                    <p class="text-xs text-gray-500">PDF files only</p>
+                                </div>
+                                <input id="file-upload" type="file" class="hidden" accept=".pdf" />
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div id="controls-section" class="hidden">
+                        <div class="flex flex-col space-y-2 mb-6">
+                            <div class="border border-gray-200 rounded-lg p-4">
+                                <h3 class="font-medium text-gray-800 mb-2">Step 1: Define Exclusion Zones</h3>
+                                <p class="text-sm text-gray-600 mb-2">Mark areas to exclude from processing</p>
+                                <button id="exclusion-mode-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md w-full mb-2">
+                                    Draw Exclusion Zone
+                                </button>
+                                <button id="clear-exclusions-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-md w-full">
+                                    Clear Exclusion Zones
+                                </button>
+                            </div>
+
+                            <div class="border border-gray-200 rounded-lg p-4">
+                                <h3 class="font-medium text-gray-800 mb-2">Step 2: Select Dimensions</h3>
+                                <p class="text-sm text-gray-600 mb-2">Click on metric dimensions to convert</p>
+                                <button id="dimension-mode-btn" class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-md w-full mb-2">
+                                    Select Dimensions
+                                </button>
+                                <button id="clear-dimensions-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-md w-full">
+                                    Clear Dimensions
+                                </button>
+                            </div>
+
+                            <div class="border border-gray-200 rounded-lg p-4">
+                                <h3 class="font-medium text-gray-800 mb-2">Step 3: Process PDF</h3>
+                                <p class="text-sm text-gray-600 mb-2">Convert selected dimensions to imperial</p>
+                                <button id="process-btn" class="bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-4 rounded-md w-full">
+                                    Process PDF
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="download-section" class="hidden mt-6 border border-gray-200 rounded-lg p-4">
+                            <h3 class="font-medium text-gray-800 mb-2">Download Processed PDF</h3>
+                            <a id="download-link" href="#" class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-3 px-4 rounded-md block text-center">
+                                Download Converted PDF
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-700">Selected Dimensions</h2>
+                    <div id="no-dimensions" class="text-gray-500 italic text-center py-4">
+                        No dimensions selected yet
+                    </div>
+                    <div id="dimensions-list" class="hidden">
+                        <div class="overflow-y-auto max-h-64">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Page</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value (mm)</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">In Inches</th>
+                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dimensions-table-body" class="bg-white divide-y divide-gray-200">
+                                    <!-- Dimensions will be added here dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Panel: PDF Preview -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow-md p-6 relative">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-gray-700">PDF Preview</h2>
+                        <div id="page-navigation" class="hidden">
+                            <button id="prev-page" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-1 px-3 rounded-md mr-2">Previous</button>
+                            <span>Page <span id="current-page">1</span> of <span id="total-pages">1</span></span>
+                            <button id="next-page" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-1 px-3 rounded-md ml-2">Next</button>
+                        </div>
+                    </div>
+                    
+                    <div id="pdf-message" class="flex items-center justify-center p-12 border-2 border-dashed border-gray-300 rounded-lg">
+                        <p class="text-gray-500">Upload a PDF to preview and edit</p>
+                    </div>
+                    
+                    <div id="pdf-container" class="pdf-preview hidden">
+                        <div class="canvas-wrapper relative">
+                            <canvas id="pdf-canvas" class="w-full"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div id="loading-overlay" class="loading-overlay absolute inset-0 flex items-center justify-center hidden">
+                        <div class="flex flex-col items-center">
+                            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                            <p class="mt-4 text-gray-700 font-medium" id="loading-message">Processing...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="modal-dimension-input" class="fixed inset-0 flex items-center justify-center hidden z-50">
+                    <div class="absolute inset-0 bg-black opacity-50"></div>
+                    <div class="bg-white rounded-lg shadow-xl p-6 w-96 relative z-10">
+                        <h3 class="text-lg font-semibold mb-4">Enter Dimension Value</h3>
+                        <p class="text-gray-600 mb-4">Enter the metric value in millimeters:</p>
+                        <input type="number" id="dimension-value" class="w-full p-2 border border-gray-300 rounded-md mb-4" placeholder="Enter value in mm">
+                        <div class="flex justify-end space-x-2">
+                            <button id="cancel-dimension" class="bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 px-4 rounded-md">Cancel</button>
+                            <button id="save-dimension" class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const fileUpload = document.getElementById('file-upload');
+            const pdfMessage = document.getElementById('pdf-message');
+            const pdfContainer = document.getElementById('pdf-container');
+            const pdfCanvas = document.getElementById('pdf-canvas');
+            const prevPageBtn = document.getElementById('prev-page');
+            const nextPageBtn = document.getElementById('next-page');
+            const currentPageEl = document.getElementById('current-page');
+            const totalPagesEl = document.getElementById('total-pages');
+            const pageNavigation = document.getElementById('page-navigation');
+            const exclusionModeBtn = document.getElementById('exclusion-mode-btn');
+            const clearExclusionsBtn = document.getElementById('clear-exclusions-btn');
+            const dimensionModeBtn = document.getElementById('dimension-mode-btn');
+            const clearDimensionsBtn = document.getElementById('clear-dimensions-btn');
+            const processBtn = document.getElementById('process-btn');
+            const controlsSection = document.getElementById('controls-section');
+            const downloadSection = document.getElementById('download-section');
+            const downloadLink = document.getElementById('download-link');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const loadingMessage = document.getElementById('loading-message');
+            const modalDimensionInput = document.getElementById('modal-dimension-input');
+            const dimensionValueInput = document.getElementById('dimension-value');
+            const saveDimensionBtn = document.getElementById('save-dimension');
+            const cancelDimensionBtn = document.getElementById('cancel-dimension');
+            const noDimensions = document.getElementById('no-dimensions');
+            const dimensionsList = document.getElementById('dimensions-list');
+            const dimensionsTableBody = document.getElementById('dimensions-table-body');
+            
+            // State variables
+            let fabricCanvas;
+            let currentPDF = null;
+            let currentPage = 1;
+            let totalPages = 1;
+            let pageImages = [];
+            let exclusionMode = false;
+            let dimensionMode = false;
+            let exclusionZones = [];
+            let dimensions = [];
+            let currentDimensionPoint = null;
+            
+            // Initialize fabric canvas
+            function initializeCanvas() {
+                fabricCanvas = new fabric.Canvas('pdf-canvas', {
+                    selection: false
+                });
+                
+                fabricCanvas.on('mouse:down', onCanvasMouseDown);
+                
+                // Adjust canvas dimensions to container
+                window.addEventListener('resize', resizeCanvas);
+            }
+            
+            // Event listeners
+            fileUpload.addEventListener('change', handleFileUpload);
+            prevPageBtn.addEventListener('click', () => navigatePage(-1));
+            nextPageBtn.addEventListener('click', () => navigatePage(1));
+            exclusionModeBtn.addEventListener('click', toggleExclusionMode);
+            clearExclusionsBtn.addEventListener('click', clearExclusionZones);
+            dimensionModeBtn.addEventListener('click', toggleDimensionMode);
+            clearDimensionsBtn.addEventListener('click', clearDimensions);
+            processBtn.addEventListener('click', processPDF);
+            saveDimensionBtn.addEventListener('click', saveDimension);
+            cancelDimensionBtn.addEventListener('click', () => modalDimensionInput.classList.add('hidden'));
+            
+            // Handle file upload
+            function handleFileUpload(e) {
+                const file = e.target.files[0];
+                if (!file || file.type !== 'application/pdf') {
+                    alert('Please select a valid PDF file.');
+                    return;
+                }
+                
+                // Show loading
+                showLoading('Uploading PDF...');
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        currentPDF = data.filename;
+                        totalPages = data.pageCount;
+                        pageImages = data.previews;
+                        
+                        // Initialize canvas
+                        if (!fabricCanvas) {
+                            initializeCanvas();
+                        }
+                        
+                        // Show controls and load first page
+                        controlsSection.classList.remove('hidden');
+                        pageNavigation.classList.remove('hidden');
+                        currentPage = 1;
+                        loadPage(currentPage);
+                        
+                        // Reset dimensions and exclusion zones
+                        dimensions = [];
+                        exclusionZones = [];
+                        updateDimensionsTable();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                    hideLoading();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while uploading the file.');
+                    hideLoading();
+                });
+            }
+            
+            // Load a specific page
+            function loadPage(pageNum) {
+                if (pageNum < 1 || pageNum > totalPages) return;
+                
+                currentPage = pageNum;
+                currentPageEl.textContent = currentPage;
+                totalPagesEl.textContent = totalPages;
+                
+                // Show loading
+                showLoading('Loading page...');
+                
+                // Hide PDF message and show container
+                pdfMessage.classList.add('hidden');
+                pdfContainer.classList.remove('hidden');
+                
+                // Clear canvas
+                fabricCanvas.clear();
+                
+                // Load page image
+                const pageImage = pageImages[pageNum - 1];
+                fabric.Image.fromURL(pageImage, function(img) {
+                    // Set canvas size
+                    resizeCanvas(img);
+                    
+                    // Add image to canvas
+                    fabricCanvas.setBackgroundImage(img, fabricCanvas.renderAll.bind(fabricCanvas));
+                    
+                    // Render exclusion zones for this page
+                    renderExclusionZones();
+                    
+                    // Render dimensions for this page
+                    renderDimensions();
+                    
+                    hideLoading();
+                });
+                
+                // Update navigation buttons
+                prevPageBtn.disabled = currentPage === 1;
+                nextPageBtn.disabled = currentPage === totalPages;
+            }
+            
+            // Navigate between pages
+            function navigatePage(delta) {
+                const newPage = currentPage + delta;
+                if (newPage >= 1 && newPage <= totalPages) {
+                    loadPage(newPage);
+                }
+            }
+            
+            // Resize canvas to fit container or image
+            function resizeCanvas(img) {
+                const container = document.querySelector('.canvas-wrapper');
+                const containerWidth = container.clientWidth;
+                
+                if (img && img.width) {
+                    const imgWidth = img.width;
+                    const imgHeight = img.height;
+                    
+                    // Scale to fit width
+                    const scale = containerWidth / imgWidth;
+                    const scaledHeight = imgHeight * scale;
+                    
+                    fabricCanvas.setWidth(containerWidth);
+                    fabricCanvas.setHeight(scaledHeight);
+                    
+                    if (img.scaleX) {
+                        img.scaleX = scale;
+                        img.scaleY = scale;
+                    }
+                } else {
+                    fabricCanvas.setWidth(containerWidth);
+                    fabricCanvas.setHeight(containerWidth * 1.414); // Approximate A4 ratio
+                }
+                
+                fabricCanvas.renderAll();
+            }
+            
+            // Toggle exclusion mode
+            function toggleExclusionMode() {
+                exclusionMode = !exclusionMode;
+                dimensionMode = false; // Disable dimension mode
+                
+                // Update UI
+                document.body.classList.toggle('drawing-exclusion', exclusionMode);
+                document.body.classList.remove('selecting-dimension');
+                
+                if (exclusionMode) {
+                    exclusionModeBtn.textContent = 'Cancel Drawing';
+                    exclusionModeBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                    exclusionModeBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+                    
+                    dimensionModeBtn.textContent = 'Select Dimensions';
+                    dimensionModeBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    dimensionModeBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                } else {
+                    exclusionModeBtn.textContent = 'Draw Exclusion Zone';
+                    exclusionModeBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    exclusionModeBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                }
+            }
+            
+            // Toggle dimension selection mode
+            function toggleDimensionMode() {
+                dimensionMode = !dimensionMode;
+                exclusionMode = false; // Disable exclusion mode
+                
+                // Update UI
+                document.body.classList.toggle('selecting-dimension', dimensionMode);
+                document.body.classList.remove('drawing-exclusion');
+                
+                if (dimensionMode) {
+                    dimensionModeBtn.textContent = 'Cancel Selection';
+                    dimensionModeBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+                    dimensionModeBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+                    
+                    exclusionModeBtn.textContent = 'Draw Exclusion Zone';
+                    exclusionModeBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    exclusionModeBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                } else {
+                    dimensionModeBtn.textContent = 'Select Dimensions';
+                    dimensionModeBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    dimensionModeBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                }
+            }
+            
+            // Canvas mouse events
+            let isDrawing = false;
+            let startPoint = { x: 0, y: 0 };
+            let currentRect = null;
+            
+            function onCanvasMouseDown(opt) {
+                const pointer = fabricCanvas.getPointer(opt.e);
+                
+                if (exclusionMode) {
+                    // Start drawing exclusion zone
+                    isDrawing = true;
+                    startPoint = { x: pointer.x, y: pointer.y };
+                    
+                    currentRect = new fabric.Rect({
+                        left: startPoint.x,
+                        top: startPoint.y,
+                        width: 0,
+                        height: 0,
+                        fill: 'rgba(255, 0, 0, 0.3)',
+                        selectable: false
+                    });
+                    
+                    fabricCanvas.add(currentRect);
+                    
+                    // Add mouse move and up handlers
+                    fabricCanvas.on('mouse:move', onCanvasMouseMove);
+                    fabricCanvas.on('mouse:up', onCanvasMouseUp);
+                }
+                else if (dimensionMode) {
+                    // Select dimension point
+                    currentDimensionPoint = {
+                        x: pointer.x,
+                        y: pointer.y,
+                        page: currentPage - 1 // 0-based for backend
+                    };
+                    
+                    // Show dimension input modal
+                    showDimensionModal();
+                }
+            }
+            
+            function onCanvasMouseMove(opt) {
+                if (!isDrawing) return;
+                
+                const pointer = fabricCanvas.getPointer(opt.e);
+                
+                // Update rectangle dimensions
+                if (startPoint.x > pointer.x) {
+                    currentRect.set({ left: pointer.x });
+                }
+                
+                if (startPoint.y > pointer.y) {
+                    currentRect.set({ top: pointer.y });
+                }
+                
+                currentRect.set({
+                    width: Math.abs(startPoint.x - pointer.x),
+                    height: Math.abs(startPoint.y - pointer.y)
+                });
+                
+                fabricCanvas.renderAll();
+            }
+            
+            function onCanvasMouseUp() {
+                if (!isDrawing) return;
+                
+                // Remove event handlers
+                fabricCanvas.off('mouse:move', onCanvasMouseMove);
+                fabricCanvas.off('mouse:up', onCanvasMouseUp);
+                
+                isDrawing = false;
+                
+                // Finish drawing rectangle
+                if (currentRect.width > 5 && currentRect.height > 5) {
+                    // Add to exclusion zones
+                    exclusionZones.push({
+                        page: currentPage - 1, // 0-based for backend
+                        x: currentRect.left,
+                        y: currentRect.top,
+                        width: currentRect.width,
+                        height: currentRect.height
+                    });
+                } else {
+                    // Remove tiny rectangles
+                    fabricCanvas.remove(currentRect);
+                }
+                
+                currentRect = null;
+                
+                // Reset exclusion mode
+                toggleExclusionMode();
+            }
+            
+            // Show dimension input modal
+            function showDimensionModal() {
+                dimensionValueInput.value = '';
+                modalDimensionInput.classList.remove('hidden');
+                dimensionValueInput.focus();
+            }
+            
+            // Save dimension
+            function saveDimension() {
+                const value = parseFloat(dimensionValueInput.value);
+                
+                if (isNaN(value) || value <= 0) {
+                    alert('Please enter a valid positive number.');
+                    return;
+                }
+                
+                // Add dimension with converted value
+                const inchValue = (value / 25.4).toFixed(3);
+                
+                dimensions.push({
+                    page: currentDimensionPoint.page,
+                    x: currentDimensionPoint.x,
+                    y: currentDimensionPoint.y,
+                    value: value,
+                    inchValue: inchValue
+                });
+                
+                // Hide modal
+                modalDimensionInput.classList.add('hidden');
+                
+                // Update dimensions table
+                updateDimensionsTable();
+                
+                // Add indicator to canvas
+                addDimensionIndicator(currentDimensionPoint, value);
+                
+                // Reset dimension mode
+                toggleDimensionMode();
+            }
+            
+            // Add visual indicator for dimension on canvas
+            function addDimensionIndicator(point, value) {
+                // Create circle indicator
+                const circle = new fabric.Circle({
+                    left: point.x - 10,
+                    top: point.y - 10,
+                    radius: 10,
+                    fill: 'rgba(0, 128, 0, 0.5)',
+                    stroke: 'green',
+                    strokeWidth: 2,
+                    selectable: false
+                });
+                
+                // Create text label
+                const text = new fabric.Text(value.toString() + ' mm', {
+                    left: point.x + 15,
+                    top: point.y - 10,
+                    fontSize: 14,
+                    fill: 'green',
+                    selectable: false
+                });
+                
+                // Add to canvas
+                fabricCanvas.add(circle, text);
+                fabricCanvas.renderAll();
+            }
+            
+            // Render all exclusion zones for current page
+            function renderExclusionZones() {
+                // Filter zones for current page
+                const pageZones = exclusionZones.filter(zone => zone.page === currentPage - 1);
+                
+                // Add each zone to canvas
+                pageZones.forEach(zone => {
+                    const rect = new fabric.Rect({
+                        left: zone.x,
+                        top: zone.y,
+                        width: zone.width,
+                        height: zone.height,
+                        fill: 'rgba(255, 0, 0, 0.3)',
+                        selectable: false
+                    });
+                    
+                    fabricCanvas.add(rect);
+                });
+                
+                fabricCanvas.renderAll();
+            }
+            
+            // Render all dimensions for current page
+            function renderDimensions() {
+                // Filter dimensions for current page
+                const pageDimensions = dimensions.filter(dim => dim.page === currentPage - 1);
+                
+                // Add each dimension indicator to canvas
+                pageDimensions.forEach(dim => {
+                    addDimensionIndicator({ x: dim.x, y: dim.y }, dim.value);
+                });
+            }
+            
+            // Clear exclusion zones
+            function clearExclusionZones() {
+                // Remove zones for current page
+                exclusionZones = exclusionZones.filter(zone => zone.page !== currentPage - 1);
+                
+                // Reload page to clear canvas
+                loadPage(currentPage);
+            }
+            
+            // Clear dimensions
+            function clearDimensions() {
+                // Remove dimensions for current page
+                dimensions = dimensions.filter(dim => dim.page !== currentPage - 1);
+                
+                // Update dimensions table
+                updateDimensionsTable();
+                
+                // Reload page to clear canvas
+                loadPage(currentPage);
+            }
+            
+            // Update dimensions table
+            function updateDimensionsTable() {
+                if (dimensions.length === 0) {
+                    noDimensions.classList.remove('hidden');
+                    dimensionsList.classList.add('hidden');
+                    return;
+                }
+                
+                noDimensions.classList.add('hidden');
+                dimensionsList.classList.remove('hidden');
+                
+                // Clear table
+                dimensionsTableBody.innerHTML = '';
+                
+                // Add rows for each dimension
+                dimensions.forEach((dim, index) => {
+                    const row = document.createElement('tr');
+                    
+                    row.innerHTML = `
+                        <td class="px-3 py-2 whitespace-nowrap">${dim.page + 1}</td>
+                        <td class="px-3 py-2 whitespace-nowrap">${dim.value} mm</td>
+                        <td class="px-3 py-2 whitespace-nowrap">${dim.inchValue} in</td>
+                        <td class="px-3 py-2 whitespace-nowrap text-right">
+                            <button class="text-red-500 hover:text-red-700" data-index="${index}">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
+                        </td>
+                    `;
+                    
+                    dimensionsTableBody.appendChild(row);
+                    
+                    // Add delete button handler
+                    const deleteBtn = row.querySelector('button');
+                    deleteBtn.addEventListener('click', function() {
+                        const index = parseInt(this.dataset.index);
+                        dimensions.splice(index, 1);
+                        updateDimensionsTable();
+                        
+                        // Reload current page to refresh indicators
+                        if (dimensions.some(dim => dim.page === currentPage - 1)) {
+                            loadPage(currentPage);
+                        }
+                    });
+                });
+            }
+            
+            // Process PDF
+            function processPDF() {
+                if (dimensions.length === 0) {
+                    alert('Please select at least one dimension to convert.');
+                    return;
+                }
+                
+                showLoading('Processing PDF...');
+                
+                fetch('/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: currentPDF,
+                        dimensions: dimensions,
+                        exclusionZones: exclusionZones
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show download button
+                        downloadSection.classList.remove('hidden');
+                        downloadLink.href = data.processedFile;
+                        
+                        alert('PDF processed successfully! Click the download button to get your file.');
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                    hideLoading();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while processing the PDF.');
+                    hideLoading();
+                });
+            }
+            
+            // Loading overlay
+            function showLoading(message) {
+                loadingMessage.textContent = message || 'Processing...';
+                loadingOverlay.classList.remove('hidden');
+            }
+            
+            function hideLoading() {
+                loadingOverlay.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
